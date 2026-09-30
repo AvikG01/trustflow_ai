@@ -1,0 +1,23 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Backend environment
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Frontend environment
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Dependencies
+node_modules/
+
+# Build files
+.next/
+dist/
+build/
+.env

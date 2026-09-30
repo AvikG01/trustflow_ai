@@ -1,0 +1,25 @@
+-- Migration: 009_create_jobs.sql
+CREATE TABLE IF NOT EXISTS jobs (
+    id VARCHAR(64) PRIMARY KEY,
+    job_source VARCHAR(50) NOT NULL,
+    source ENUM('NAUKRI', 'LINKEDIN', 'INDEED', 'OTHER') DEFAULT 'OTHER',
+    source_job_id VARCHAR(100) NULL,
+    external_job_id VARCHAR(100) NULL,
+    title VARCHAR(150) NOT NULL,
+    company VARCHAR(150) NULL,
+    company_name VARCHAR(150) NULL,
+    location VARCHAR(100) NULL,
+    job_url TEXT NOT NULL,
+    job_description TEXT NULL,
+    description TEXT NULL,
+    employment_type VARCHAR(50) NULL,
+    work_mode VARCHAR(50) NULL,
+    posted_at DATETIME NULL,
+    discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    raw_data JSON NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_jobs_source_ext (job_source, source_job_id),
+    INDEX idx_jobs_company_name (company_name),
+    INDEX idx_jobs_location (location)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

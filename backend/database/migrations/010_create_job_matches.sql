@@ -1,0 +1,28 @@
+-- Migration: 010_create_job_matches.sql
+CREATE TABLE IF NOT EXISTS job_matches (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    resume_id VARCHAR(64) NULL,
+    job_id VARCHAR(64) NOT NULL,
+    job_search_id VARCHAR(64) NULL,
+    search_id VARCHAR(64) NULL,
+    match_score DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+    overall_match_score DECIMAL(5,2) DEFAULT 0.00,
+    skill_match_score DECIMAL(5,2) DEFAULT 0.00,
+    experience_match_score DECIMAL(5,2) DEFAULT 0.00,
+    project_match_score DECIMAL(5,2) DEFAULT 0.00,
+    keyword_match_score DECIMAL(5,2) DEFAULT 0.00,
+    matching_skills JSON NULL,
+    matching_skills_json JSON NULL,
+    missing_skills JSON NULL,
+    missing_skills_json JSON NULL,
+    relevance_summary TEXT NULL,
+    analysis_data JSON NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (resume_id) REFERENCES resumes(id) ON DELETE SET NULL,
+    FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+    INDEX idx_job_matches_user_id (user_id),
+    INDEX idx_job_matches_job_id (job_id),
+    INDEX idx_job_matches_resume_id (resume_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
