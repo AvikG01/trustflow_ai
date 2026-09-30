@@ -18,17 +18,22 @@ import {
   FiRefreshCw,
   FiAward,
   FiBriefcase,
-  FiCheckSquare,
   FiSearch,
+  FiChevronDown,
+  FiChevronUp,
+  FiCode,
+  FiZap,
 } from 'react-icons/fi';
 
 export default function AnalysisPage() {
   const { isAtsAuthorized, openAuthModal } = useAtsAuth();
-  const { setAnalysis, resumeData } = useResume();
+  const { setAnalysis, resumeData, saveResumeNow } = useResume();
   const { addToast } = useToast();
   const [analyzing, setAnalyzing] = useState(false);
   const [aiState, setAiState] = useState('ANALYZING');
   const [report, setReport] = useState(null);
+  const [showAtsBreakdown, setShowAtsBreakdown] = useState(false);
+  const [showCcsBreakdown, setShowCcsBreakdown] = useState(false);
 
   // Load existing analysis if available on mount
   useEffect(() => {
@@ -54,6 +59,20 @@ export default function AnalysisPage() {
       return;
     }
 
+    let currentResume = resumeData;
+    if (!currentResume?.id) {
+      try {
+        currentResume = await saveResumeNow();
+      } catch (e) {
+        // Continue if save fails
+      }
+    }
+
+    if (!currentResume?.id && !currentResume?.personalInfo?.fullName && !currentResume?.professionalSummary) {
+      addToast('Please save your resume before running ATS analysis.', 'error');
+      return;
+    }
+
     setAnalyzing(true);
     setAiState('QUEUED');
 
@@ -62,17 +81,17 @@ export default function AnalysisPage() {
 
     try {
       const payload = {
-        resume_id: resumeData?.id || null,
-        target_job_title: resumeData?.target_role || 'Senior Full Stack Software Engineer',
-        resume_data: resumeData,
+        resume_id: currentResume?.id || null,
+        target_job_title: currentResume?.target_role || 'Senior Full Stack Software Engineer',
+        resume_data: currentResume,
       };
 
       const res = await apiRequest({ action: 'analyze_resume', data: payload });
       const rawReport = res.report || res;
-      
+
       setReport(rawReport);
       setAnalysis(rawReport);
-      addToast('ATS & CCS Flaw Analysis completed successfully!', 'success');
+      addToast('ATS & CCS Deep Flaw Analysis completed successfully!', 'success');
     } catch (err) {
       addToast(err.message || 'Analysis failed. Please check ATS authorization password.', 'error');
     } finally {
@@ -86,23 +105,28 @@ export default function AnalysisPage() {
   const overallStatus = report?.overall_status ?? report?.approvalStatus ?? 'REVIEW_REQUIRED';
   const isApproved = Boolean(report?.is_approved);
 
-  // Normalize parameters into AnalysisIssueCard flaws
   const rawParams = report?.parameters || report?.raw_analysis_json?.parameters || [];
   const flawsList = Array.isArray(rawParams) && rawParams.length > 0
     ? rawParams.map((p, idx) => ({
         id: p.id || `param-${idx}`,
         severity: (p.severity || 'MAJOR').toLowerCase(),
         category: p.category || 'ATS',
-        parameter: p.parameter_name || p.parameter || 'Parameter Check',
-        problem: p.problem || 'Issue detected in section syntax or metrics',
+        parameter: p.parameter_name || p.title || p.parameter || 'Parameter Check',
+        problem: p.problem || p.description || 'Issue detected in section syntax or metrics',
         whyItMatters: p.why_it_matters || p.whyItMatters || 'Recruiters and ATS engines flag this pattern during evaluation.',
-        fix: p.recommended_action || p.fix || 'Update section wording and metrics according to best practices.'
+        fix: p.recommended_action || p.recommendation || p.fix || 'Update section wording and metrics according to best practices.'
       }))
     : [];
 
   const certAudits = report?.certification_audits || report?.raw_analysis_json?.certification_audits || [];
   const internshipAudits = report?.internship_audits || report?.raw_analysis_json?.internship_audits || [];
   const factCheckFindings = report?.fact_check_findings || report?.raw_analysis_json?.fact_check_findings || [];
+  const scoreBreakdown = report?.scoreBreakdown || report?.raw_analysis_json?.scoreBreakdown || null;
+  const ccsBreakdown = report?.ccsBreakdown || report?.raw_analysis_json?.ccsBreakdown || null;
+  const skillEvidenceGaps = report?.skillEvidenceGaps || report?.raw_analysis_json?.skillEvidenceGaps || [];
+  const missingKeywords = report?.missingKeywords || report?.raw_analysis_json?.missingKeywords || [];
+  const strengths = report?.strengths || report?.raw_analysis_json?.strengths || [];
+  const recommendations = report?.recommendations || report?.raw_analysis_json?.recommendations || [];
 
   return (
     <ProtectedRoute>
@@ -112,15 +136,15 @@ export default function AnalysisPage() {
           <div>
             <div className="flex items-center space-x-2">
               <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 bg-cyan-950/60 px-2.5 py-0.5 rounded border border-cyan-500/30">
-                Analysis Engine
+                Enterprise Analysis Engine
               </span>
-              <span className="text-xs text-slate-400">• ATS / CCS Deep Parser</span>
+              <span className="text-xs text-slate-400">• Deep 20-Dimension Audit</span>
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight mt-1">
-              ATS & CCS Resume Flaw Analysis
+              ATS & CCS Deep Flaw Analysis
             </h1>
             <p className="text-xs text-slate-400">
-              Audit your resume for recruitment algorithm risks, missing keywords, and structural flaws
+              Evidence-based evaluation against technical recruitment screening standards
             </p>
           </div>
 
@@ -159,7 +183,7 @@ export default function AnalysisPage() {
         )}
 
         {analyzing && (
-          <AIProcessingIndicator currentState={aiState} message="Parsing resume text & scoring competencies via Gemini AI..." />
+          <AIProcessingIndicator currentState={aiState} message="Running 20-dimension ATS & CCS candidate competency audit via Gemini AI..." />
         )}
 
         {report && !analyzing && (
@@ -170,16 +194,34 @@ export default function AnalysisPage() {
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">ATS Score</h3>
                 <ProgressRing score={atsScore} label="ATS Compatibility" size={130} />
                 <p className="text-xs text-slate-300">
-                  Keyword match & syntax parsing score against IT industry standards.
+                  Weighted category match against enterprise recruitment standards.
                 </p>
+                {scoreBreakdown && (
+                  <button
+                    onClick={() => setShowAtsBreakdown(!showAtsBreakdown)}
+                    className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center justify-center space-x-1 mx-auto pt-1"
+                  >
+                    <span>{showAtsBreakdown ? 'Hide Category Breakdown' : 'View Category Breakdown'}</span>
+                    {showAtsBreakdown ? <FiChevronUp /> : <FiChevronDown />}
+                  </button>
+                )}
               </div>
 
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl text-center space-y-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">CCS Score</h3>
                 <ProgressRing score={ccsScore} label="Competency Score" size={130} />
                 <p className="text-xs text-slate-300">
-                  Candidate Competency System evaluation of leadership & technical depth.
+                  Candidate Competency System evaluation of technical depth & evidence.
                 </p>
+                {ccsBreakdown && (
+                  <button
+                    onClick={() => setShowCcsBreakdown(!showCcsBreakdown)}
+                    className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center justify-center space-x-1 mx-auto pt-1"
+                  >
+                    <span>{showCcsBreakdown ? 'Hide Competency Breakdown' : 'View Competency Breakdown'}</span>
+                    {showCcsBreakdown ? <FiChevronUp /> : <FiChevronDown />}
+                  </button>
+                )}
               </div>
 
               {/* Approval & Review Status Card */}
@@ -193,9 +235,9 @@ export default function AnalysisPage() {
                       {isApproved ? 'APPROVED' : 'MANUAL REVIEW REQUIRED'}
                     </span>
                   </div>
-                  <h3 className="text-base font-bold text-white">Score Review Breakdown</h3>
+                  <h3 className="text-base font-bold text-white">Strict Threshold Audit</h3>
                   <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">
-                    Threshold policy strictly enforced. Even with high scores, candidate resumes require manual review before auto-submission.
+                    Threshold policy enforced. Resumes require evidence verification and manual review prior to candidate submission.
                   </p>
                 </div>
 
@@ -205,19 +247,90 @@ export default function AnalysisPage() {
               </div>
             </div>
 
+            {/* ATS Score Breakdown Drawer */}
+            {showAtsBreakdown && scoreBreakdown && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 animate-fadeIn">
+                <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2">
+                  ATS Category Weighted Score Breakdown (100% Total)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {Object.entries(scoreBreakdown).map(([key, item]) => (
+                    <div key={key} className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-200">{item.name || key}</span>
+                        <span className="font-mono text-cyan-400 font-bold">{item.score} / {item.max}</span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-cyan-500 h-full rounded-full"
+                          style={{ width: `${Math.min(100, Math.max(0, (item.score / item.max) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* CCS Competency Breakdown Drawer */}
+            {showCcsBreakdown && ccsBreakdown && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 animate-fadeIn">
+                <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-2">
+                  CCS Competency Score Breakdown
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {Object.entries(ccsBreakdown).map(([key, item]) => (
+                    <div key={key} className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-200">{item.name || key}</span>
+                        <span className="font-mono text-indigo-400 font-bold">{item.score} / {item.max}</span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-indigo-500 h-full rounded-full"
+                          style={{ width: `${Math.min(100, Math.max(0, (item.score / item.max) * 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Flaw Detection Section */}
             {flawsList.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center space-x-2">
                   <FiAlertTriangle className="w-5 h-5 text-rose-400" />
                   <h2 className="text-lg font-bold text-white tracking-tight">
-                    Detected Resume Flaws & Actionable Fixes ({flawsList.length})
+                    Detected Evidence-Based Flaws & Actionable Fixes ({flawsList.length})
                   </h2>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {flawsList.map((flaw) => (
                     <AnalysisIssueCard key={flaw.id} flaw={flaw} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Skill Evidence Gaps Section */}
+            {skillEvidenceGaps.length > 0 && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+                  <FiCode className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-base font-bold text-white">Skill Evidence Gaps ({skillEvidenceGaps.length})</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {skillEvidenceGaps.map((gap, i) => (
+                    <div key={i} className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5 text-xs">
+                      <span className="font-bold text-amber-400 block">Claimed Skill: {gap.skill}</span>
+                      <p className="text-slate-300">{gap.issue}</p>
+                      <p className="text-cyan-300 text-[11px] bg-slate-900 p-2 rounded border border-slate-800 font-mono">
+                        Fix: {gap.recommendation}
+                      </p>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -254,7 +367,7 @@ export default function AnalysisPage() {
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
                 <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
                   <FiBriefcase className="w-5 h-5 text-indigo-400" />
-                  <h3 className="text-base font-bold text-white">Internship Duration Audits</h3>
+                  <h3 className="text-base font-bold text-white">Internship Duration Audits (3-Month Benchmark)</h3>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {internshipAudits.map((intern, i) => (
@@ -299,6 +412,43 @@ export default function AnalysisPage() {
                 </div>
               </div>
             )}
+
+            {/* Strengths & Recommendations Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {strengths.length > 0 && (
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-3">
+                  <div className="flex items-center space-x-2 border-b border-slate-800 pb-2">
+                    <FiCheckCircle className="w-5 h-5 text-emerald-400" />
+                    <h3 className="text-base font-bold text-white">Identified Resume Strengths</h3>
+                  </div>
+                  <ul className="space-y-2 text-xs text-slate-300">
+                    {strengths.map((str, idx) => (
+                      <li key={idx} className="flex items-start space-x-2">
+                        <span className="text-emerald-400 font-bold mt-0.5">•</span>
+                        <span>{str}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {recommendations.length > 0 && (
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-3">
+                  <div className="flex items-center space-x-2 border-b border-slate-800 pb-2">
+                    <FiZap className="w-5 h-5 text-cyan-400" />
+                    <h3 className="text-base font-bold text-white">Actionable Next Steps</h3>
+                  </div>
+                  <ul className="space-y-2 text-xs text-slate-300">
+                    {recommendations.map((rec, idx) => (
+                      <li key={idx} className="flex items-start space-x-2">
+                        <span className="text-cyan-400 font-bold mt-0.5">•</span>
+                        <span>{rec}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

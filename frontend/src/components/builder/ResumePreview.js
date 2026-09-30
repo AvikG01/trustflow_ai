@@ -2,35 +2,48 @@
 
 import React, { useRef } from 'react';
 import { useResume } from '@/context/ResumeContext';
-import ClassicTemplate from './templates/ClassicTemplate';
-import TechnicalTemplate from './templates/TechnicalTemplate';
-import MinimalTemplate from './templates/MinimalTemplate';
-import { FiZoomIn, FiZoomOut, FiPrinter, FiSave, FiCheckCircle, FiRefreshCw } from 'react-icons/fi';
+import { useToast } from '@/context/ToastContext';
+import ResumePrintable from './ResumePrintable';
+import { FiZoomIn, FiZoomOut, FiPrinter, FiCheckCircle, FiRefreshCw } from 'react-icons/fi';
 
 export default function ResumePreview() {
-  const { resumeData, zoomLevel, setZoomLevel, isSaving, lastSavedTime } = useResume();
+  const { resumeData, zoomLevel, setZoomLevel, isSaving, lastSavedTime, saveResumeNow } = useResume();
+  const { addToast } = useToast();
   const previewRef = useRef(null);
 
   const activeTemplate = resumeData?.template || 'TechnicalTemplate';
 
-  const renderActiveTemplate = () => {
-    switch (activeTemplate) {
-      case 'ClassicTemplate':
-        return <ClassicTemplate data={resumeData} />;
-      case 'MinimalTemplate':
-        return <MinimalTemplate data={resumeData} />;
-      case 'TechnicalTemplate':
-      default:
-        return <TechnicalTemplate data={resumeData} />;
-    }
-  };
+  const handlePrint = async () => {
+    const p = resumeData?.personalInfo || {};
+    const hasName = Boolean(p.fullName || p.email || p.phone);
+    const hasSummary = Boolean(resumeData?.professionalSummary);
+    const hasSkills = Array.isArray(resumeData?.skills?.frontend) && resumeData.skills.frontend.length > 0;
+    const hasExperience = Array.isArray(resumeData?.experience) && resumeData.experience.length > 0;
+    const hasProjects = Array.isArray(resumeData?.projects) && resumeData.projects.length > 0;
 
-  const handlePrint = () => {
+    if (!hasName && !hasSummary && !hasSkills && !hasExperience && !hasProjects) {
+      addToast('Please save your resume before downloading.', 'error');
+      return;
+    }
+
+    try {
+      if (!resumeData?.id) {
+        await saveResumeNow();
+      }
+    } catch (e) {
+      // Continue print even if background save had a warning
+    }
+
     window.print();
   };
 
   return (
     <div className="flex flex-col h-full space-y-3">
+      {/* Isolated Print Target for @media print */}
+      <div id="resume-printable-container">
+        <ResumePrintable resume={resumeData} template={activeTemplate} />
+      </div>
+
       {/* Action Toolbar */}
       <div className="no-print bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-md">
         {/* Autosave & Sync Indicator */}
@@ -91,7 +104,7 @@ export default function ResumePreview() {
           }}
           className="printable-resume w-full max-w-[800px] transition-all"
         >
-          {renderActiveTemplate()}
+          <ResumePrintable resume={resumeData} template={activeTemplate} />
         </div>
       </div>
     </div>

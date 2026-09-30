@@ -8,13 +8,13 @@ export default function JobCard({ job, onOptimize }) {
 
   const company = job.company_name || job.company || 'Company';
   const location = job.location || 'Location Not Specified';
-  const source = job.source || 'Portal';
-  const jobUrl = job.job_url || job.url;
+  const source = job.job_source || job.source || 'Portal';
+  const jobUrl = job.application_url || job.job_url || job.url;
   const matchScore = job.match_score ?? job.matchPercentage ?? 0;
   const matchingSkills = job.matching_skills || job.matchingSkills || [];
   const missingSkills = job.missing_skills || job.missingSkills || [];
-  const experience = job.experience || 'Not specified';
-  const description = job.description || 'No description available.';
+  const experience = job.experience || job.workMode || 'Not specified';
+  const description = job.job_description || job.description || 'No description available.';
 
   const matchColor =
     matchScore >= 75

@@ -37,18 +37,12 @@ async function handleUpdate(req, res, next) {
 async function handleUpdateResume(req, res) {
   if (!req.user) return responseHandler.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
 
-  const { resume_id, title, template_id, target_role, sections, change_summary } = req.body;
+  const { resume_id } = req.body;
   if (!resume_id) {
     return responseHandler.error(res, 'resume_id parameter is required', 400, 'MISSING_PARAM');
   }
 
-  const updatedResume = await resumeModel.updateResume(resume_id, req.user.id, {
-    title,
-    template_id,
-    target_role,
-    sections,
-    change_summary: change_summary || 'Updated resume sections',
-  });
+  const updatedResume = await resumeModel.updateResume(resume_id, req.user.id, req.body);
 
   if (!updatedResume) {
     return responseHandler.error(res, 'Resume not found or access denied', 404, 'NOT_FOUND');

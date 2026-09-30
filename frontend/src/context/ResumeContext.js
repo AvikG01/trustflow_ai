@@ -8,7 +8,7 @@ const ResumeContext = createContext(null);
 
 export const EMPTY_RESUME = {
   id: '',
-  title: '',
+  title: 'My Resume',
   template: 'TechnicalTemplate',
   personalInfo: {
     fullName: '',
@@ -168,6 +168,80 @@ export function ResumeProvider({ children }) {
     };
   }, []);
 
+  // Fetch all user resumes from backend database
+  const loadUserResumes = useCallback(async () => {
+    try {
+      const res = await apiRequest({ action: 'get_resumes', method: 'GET' });
+      const list = res.resumes || res || [];
+      if (Array.isArray(list)) {
+        setResumes(list);
+        if (list.length > 0) {
+          // Default active resume to latest saved if resumeData is empty
+          if (!resumeData?.id) {
+            setResumeData(list[0]);
+            setSelectedResume(list[0]);
+            setCurrentResume(list[0]);
+          }
+        }
+      }
+      return list;
+    } catch (e) {
+      // User may not be logged in yet
+      return [];
+    }
+  }, [resumeData?.id]);
+
+  // Load user resumes on mount
+  useEffect(() => {
+    loadUserResumes();
+  }, [loadUserResumes]);
+
+  // Synchronous / Immediate Save function returning persistent backend resume
+  const saveResumeNow = useCallback(async (dataToSave) => {
+    const targetData = dataToSave || resumeData;
+    setIsSaving(true);
+
+    try {
+      const hasRealId = Boolean(targetData.id && !targetData.id.startsWith('test-'));
+      const payload = {
+        resume_id: hasRealId ? targetData.id : undefined,
+        title: targetData.title || targetData.personalInfo?.fullName || 'My Resume',
+        template_id: targetData.template || 'TechnicalTemplate',
+        target_role: targetData.target_role || '',
+        resume_data: targetData,
+      };
+
+      const action = hasRealId ? 'update_resume' : 'create_resume';
+      const res = await apiRequest({ action, data: payload });
+
+      const savedResume = res.resume || res;
+      if (savedResume && savedResume.id) {
+        setResumeData(savedResume);
+        setSelectedResume(savedResume);
+        setCurrentResume(savedResume);
+        setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+
+        // Refresh list
+        setResumes((prev) => {
+          const idx = prev.findIndex((r) => r.id === savedResume.id);
+          if (idx >= 0) {
+            const updatedList = [...prev];
+            updatedList[idx] = savedResume;
+            return updatedList;
+          }
+          return [savedResume, ...prev];
+        });
+        return savedResume;
+      }
+      return targetData;
+    } catch (err) {
+      console.warn('Resume save error:', err.message);
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [resumeData]);
+
   const triggerAutosave = useCallback((newData) => {
     setIsSaving(true);
     if (saveTimeoutRef.current) {
@@ -175,18 +249,12 @@ export function ResumeProvider({ children }) {
     }
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        await apiRequest({
-          action: 'update_resume',
-          data: { resume: newData },
-        });
-        setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+        await saveResumeNow(newData);
       } catch (err) {
         console.warn('Autosave sync warning:', err.message);
-      } finally {
-        setIsSaving(false);
       }
-    }, 1200);
-  }, []);
+    }, 1000);
+  }, [saveResumeNow]);
 
   const updateResumeField = useCallback((path, value) => {
     setResumeData((prev) => {
@@ -206,7 +274,7 @@ export function ResumeProvider({ children }) {
 
   const updateTemplate = useCallback((templateName) => {
     setResumeData((prev) => {
-      const updated = { ...prev, template: templateName };
+      const updated = { ...prev, template: templateName, template_id: templateName };
       triggerAutosave(updated);
       return updated;
     });
@@ -239,7 +307,18 @@ export function ResumeProvider({ children }) {
   const loadResumeData = useCallback((data) => {
     if (data) {
       setResumeData(data);
+      setSelectedResume(data);
+      setCurrentResume(data);
       addToast('Resume loaded into editor', 'success');
+    }
+  }, [addToast]);
+
+  const selectActiveResume = useCallback((resume) => {
+    if (resume) {
+      setResumeData(resume);
+      setSelectedResume(resume);
+      setCurrentResume(resume);
+      addToast(`Active resume set to: ${resume.title || 'Selected Resume'}`, 'info');
     }
   }, [addToast]);
 
@@ -281,8 +360,11 @@ export function ResumeProvider({ children }) {
         setResumes,
         setSelectedResume,
         setCurrentResume,
+        selectActiveResume,
         setAnalysis,
         resetResumeState,
+        saveResumeNow,
+        loadUserResumes,
       }}
     >
       {children}

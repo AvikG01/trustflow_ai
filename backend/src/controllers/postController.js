@@ -14,6 +14,7 @@ const resumeAIService = require('../services/ai/resumeAIService');
 const jobAIService = require('../services/ai/jobAIService');
 const googleDriveService = require('../services/googleDrive/googleDriveService');
 const resumeParser = require('../services/resume/resumeParser');
+const { normalizeResume, isResumeEmpty } = require('../utils/resumeNormalizer');
 
 async function handlePost(req, res, next) {
   try {
@@ -31,9 +32,11 @@ async function handlePost(req, res, next) {
         return await handleLogin(req, res);
 
       case 'createResume':
+      case 'create_resume':
         return await handleCreateResume(req, res);
 
       case 'saveDraft':
+      case 'save_draft':
         return await handleSaveDraft(req, res);
 
       case 'duplicateResume':
@@ -43,6 +46,7 @@ async function handlePost(req, res, next) {
         return await handleUploadResume(req, res);
 
       case 'analyzeResume':
+      case 'analyze_resume':
         return await handleAnalyzeResume(req, res);
 
       case 'searchJobs':
@@ -176,11 +180,6 @@ async function handleCreateResume(req, res) {
     return responseHandler.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
   }
 
-  const validationErr = validators.validateCreateResumeInput(req.body);
-  if (validationErr) {
-    return responseHandler.error(res, validationErr, 400, 'VALIDATION_ERROR');
-  }
-
   // Server-side Usage Limit Check (MANDATORY SECTION 8 REQUIREMENT)
   const usage = await usageModel.getUsageByUserId(req.user.id);
   if (usage.resumes_count >= usage.max_resumes) {
@@ -192,8 +191,7 @@ async function handleCreateResume(req, res) {
     );
   }
 
-  const { title, template_id, target_role, sections } = req.body;
-  const newResume = await resumeModel.createResume(req.user.id, { title, template_id, target_role, sections });
+  const newResume = await resumeModel.createResume(req.user.id, req.body);
   await usageModel.incrementResumesCount(req.user.id);
 
   // Sync snapshot to Google Drive
@@ -202,7 +200,7 @@ async function handleCreateResume(req, res) {
     resumeId: newResume.id,
     version: 1,
     fileBuffer: Buffer.from(JSON.stringify(newResume, null, 2), 'utf-8'),
-    fileName: `${newResume.title.replace(/\s+/g, '_')}.json`,
+    fileName: `${(newResume.title || 'Resume').replace(/\s+/g, '_')}.json`,
   });
 
   await auditModel.logAudit({
@@ -218,19 +216,13 @@ async function handleCreateResume(req, res) {
 // 4. Save Draft
 async function handleSaveDraft(req, res) {
   if (!req.user) return responseHandler.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
-  const { resume_id, title, template_id, target_role, sections } = req.body;
+  const { resume_id } = req.body;
 
   if (!resume_id) {
     return responseHandler.error(res, 'resume_id parameter is required to save draft', 400, 'MISSING_PARAM');
   }
 
-  const updated = await resumeModel.updateResume(resume_id, req.user.id, {
-    title,
-    template_id,
-    target_role,
-    sections,
-    change_summary: 'Saved draft modification',
-  });
+  const updated = await resumeModel.updateResume(resume_id, req.user.id, req.body);
 
   if (!updated) {
     return responseHandler.error(res, 'Resume not found or access denied', 404, 'NOT_FOUND');
@@ -334,23 +326,58 @@ async function handleAnalyzeResume(req, res) {
 
   const { resume_id, target_job_title, target_job_description, resume_data } = req.body;
 
-  let resumeToAnalyze = resume_data;
-  if (!resumeToAnalyze && resume_id) {
-    resumeToAnalyze = await resumeModel.getResumeById(resume_id, req.user.id);
+  // If this request was just to verify password authorization from modal (no resume_id and no resume_data)
+  if (!resume_id && !resume_data) {
+    return responseHandler.success(res, 'ATS & CCS Authorization Granted', { authorized: true });
   }
 
-  if (!resumeToAnalyze) {
-    return responseHandler.error(res, 'Resume content or valid resume_id is required for analysis', 400, 'MISSING_PARAM');
+  let resumeRecord = null;
+  if (resume_id) {
+    resumeRecord = await resumeModel.getResumeById(resume_id, req.user.id);
+    if (!resumeRecord) {
+      return responseHandler.error(
+        res,
+        'Resume not found for the authenticated user.',
+        404,
+        'RESUME_NOT_FOUND'
+      );
+    }
   }
+
+  const rawResume = resumeRecord || resume_data;
+  const normalizedResume = normalizeResume(rawResume);
+
+  if (isResumeEmpty(normalizedResume)) {
+    return responseHandler.error(
+      res,
+      'Resume contains no content. Please add sections before running analysis.',
+      400,
+      'RESUME_EMPTY'
+    );
+  }
+
+  // Safe operational debug logging (No passwords, secrets, or raw resume blobs logged)
+  const safeDebugMetrics = {
+    resumeId: normalizedResume.id || resume_id,
+    userId: req.user.id,
+    hasResumeContent: !isResumeEmpty(normalizedResume),
+    skillsCount: (normalizedResume.skills?.frontend?.length || 0) + (normalizedResume.skills?.backend?.length || 0),
+    experienceCount: normalizedResume.experience?.length || 0,
+    educationCount: normalizedResume.education?.length || 0,
+    projectCount: normalizedResume.projects?.length || 0,
+    certificationCount: normalizedResume.certifications?.length || 0,
+  };
+  const logger = require('../utils/logger');
+  logger.info(`[ATS_CCS_ANALYSIS] Initiating evaluation for user ${req.user.id}`, safeDebugMetrics);
 
   const idempotencyKey = `ATSCCS-${req.user.id}-${resume_id || 'UPLOAD'}-${Date.now()}`;
-  const analysisResult = await resumeAIService.analyzeResume(resumeToAnalyze, target_job_title, target_job_description, idempotencyKey);
+  const analysisResult = await resumeAIService.analyzeResume(normalizedResume, target_job_title, target_job_description, idempotencyKey);
 
   // Save to DB
   const savedReport = await analysisModel.createAnalysis({
     userId: req.user.id,
-    resumeId: resume_id || null,
-    targetJobTitle: target_job_title,
+    resumeId: resume_id || normalizedResume.id || null,
+    targetJobTitle: target_job_title || normalizedResume.target_role || 'Software Engineer',
     targetJobDescription: target_job_description,
     atsScore: analysisResult.ats_score,
     ccsScore: analysisResult.ccs_score,
@@ -363,7 +390,7 @@ async function handleAnalyzeResume(req, res) {
   // Sync report to Google Drive Report Folder
   const driveResult = await googleDriveService.uploadReportFile({
     userId: req.user.id,
-    resumeId: resume_id,
+    resumeId: resume_id || normalizedResume.id,
     analysisId: savedReport.id,
     reportData: savedReport,
   });

@@ -1,11 +1,20 @@
 const db = require('../database/db');
 const { v4: uuidv4 } = require('uuid');
+const { normalizeResume, denormalizeToSections } = require('../utils/resumeNormalizer');
 
-async function createResume(userId, { title, template_id = 'modern_clean', target_role = '', sections = [] }) {
+async function createResume(userId, payload = {}) {
   const resumeId = uuidv4();
+  const title = payload.title || payload.resume_data?.title || 'Untitled Resume';
+  const template_id = payload.template_id || payload.template || payload.resume_data?.template || 'TechnicalTemplate';
+  const target_role = payload.target_role || payload.resume_data?.target_role || '';
+
+  // Get normalized sections
+  const normalized = normalizeResume({ ...payload, ...payload.resume_data, id: resumeId, userId, title, template_id, target_role });
+  const sections = normalized.sections;
+
   await db.query(
-    `INSERT INTO resumes (id, user_id, title, template_id, target_role, current_version, created_at)
-     VALUES (?, ?, ?, ?, ?, 1, NOW())`,
+    `INSERT INTO resumes (id, user_id, title, template_id, target_role, current_version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 1, NOW(), NOW())`,
     [resumeId, userId, title, template_id, target_role]
   );
 
@@ -27,21 +36,32 @@ async function createResume(userId, { title, template_id = 'modern_clean', targe
   await db.query(
     `INSERT INTO resume_versions (id, resume_id, version_number, reference_code, change_summary, snapshot_json, created_at)
      VALUES (?, ?, 1, ?, 'Initial Creation', ?, NOW())`,
-    [versionId, resumeId, refCode, JSON.stringify({ title, template_id, target_role, sections })]
+    [versionId, resumeId, refCode, JSON.stringify(normalized)]
   );
 
   return getResumeById(resumeId, userId);
 }
 
 async function getResumesByUserId(userId) {
-  return await db.query(
+  const resumes = await db.query(
     `SELECT id, user_id, title, template_id, target_role, current_version, created_at, updated_at
      FROM resumes WHERE user_id = ? ORDER BY updated_at DESC`,
     [userId]
   );
+
+  if (!resumes || resumes.length === 0) return [];
+
+  const result = [];
+  for (const r of resumes) {
+    const full = await getResumeById(r.id, userId);
+    if (full) result.push(full);
+  }
+  return result;
 }
 
 async function getResumeById(resumeId, userId) {
+  if (!resumeId || !userId) return null;
+
   const resumes = await db.query(
     `SELECT id, user_id, title, template_id, target_role, current_version, created_at, updated_at
      FROM resumes WHERE id = ? AND user_id = ?`,
@@ -49,7 +69,7 @@ async function getResumeById(resumeId, userId) {
   );
 
   if (!resumes || resumes.length === 0) return null;
-  const resume = resumes[0];
+  const resumeRecord = resumes[0];
 
   const sections = await db.query(
     `SELECT id, section_type, content_json, sort_order FROM resume_sections
@@ -57,45 +77,60 @@ async function getResumeById(resumeId, userId) {
     [resumeId]
   );
 
-  resume.sections = sections.map((s) => ({
+  resumeRecord.sections = sections.map((s) => ({
     id: s.id,
     section_type: s.section_type,
     content_json: typeof s.content_json === 'string' ? JSON.parse(s.content_json) : s.content_json,
     sort_order: s.sort_order,
   }));
 
-  return resume;
+  return normalizeResume(resumeRecord);
 }
 
-async function updateResume(resumeId, userId, { title, template_id, target_role, sections, change_summary = 'Updated draft' }) {
+async function updateResume(resumeId, userId, payload = {}) {
   const existing = await getResumeById(resumeId, userId);
   if (!existing) return null;
 
   const newVersion = parseInt(existing.current_version || 1, 10) + 1;
+  const title = payload.title || payload.resume_data?.title || existing.title;
+  const template_id = payload.template_id || payload.template || payload.resume_data?.template || existing.template_id;
+  const target_role = payload.target_role !== undefined ? payload.target_role : existing.target_role;
+  const change_summary = payload.change_summary || 'Updated resume sections';
+
+  // Merge existing normalized object with new payload
+  const incomingData = payload.resume_data || payload;
+  const merged = normalizeResume({
+    ...existing,
+    ...incomingData,
+    id: resumeId,
+    userId,
+    title,
+    template_id,
+    target_role,
+  });
+
+  const sections = merged.sections;
 
   await db.query(
     `UPDATE resumes
-     SET title = COALESCE(?, title),
-         template_id = COALESCE(?, template_id),
-         target_role = COALESCE(?, target_role),
+     SET title = ?,
+         template_id = ?,
+         target_role = ?,
          current_version = ?,
          updated_at = NOW()
      WHERE id = ? AND user_id = ?`,
     [title, template_id, target_role, newVersion, resumeId, userId]
   );
 
-  // Update sections if provided
-  if (Array.isArray(sections)) {
-    // Clear old sections and insert updated ones
-    await db.query('DELETE FROM resume_sections WHERE resume_id = ?', [resumeId]);
-    for (let i = 0; i < sections.length; i++) {
-      const sec = sections[i];
-      await db.query(
-        `INSERT INTO resume_sections (id, resume_id, section_type, content_json, sort_order)
-         VALUES (?, ?, ?, ?, ?)`,
-        [uuidv4(), resumeId, sec.section_type, JSON.stringify(sec.content_json || {}), i]
-      );
-    }
+  // Replace sections
+  await db.query('DELETE FROM resume_sections WHERE resume_id = ?', [resumeId]);
+  for (let i = 0; i < sections.length; i++) {
+    const sec = sections[i];
+    await db.query(
+      `INSERT INTO resume_sections (id, resume_id, section_type, content_json, sort_order)
+       VALUES (?, ?, ?, ?, ?)`,
+      [uuidv4(), resumeId, sec.section_type, JSON.stringify(sec.content_json || {}), i]
+    );
   }
 
   // Create new version trace
@@ -104,7 +139,7 @@ async function updateResume(resumeId, userId, { title, template_id, target_role,
   await db.query(
     `INSERT INTO resume_versions (id, resume_id, version_number, reference_code, change_summary, snapshot_json, created_at)
      VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-    [versionId, resumeId, newVersion, refCode, change_summary, JSON.stringify({ title: title || existing.title, template_id: template_id || existing.template_id, target_role: target_role || existing.target_role, sections: sections || existing.sections })]
+    [versionId, resumeId, newVersion, refCode, change_summary, JSON.stringify(merged)]
   );
 
   return getResumeById(resumeId, userId);
@@ -143,10 +178,8 @@ async function duplicateResume(resumeId, userId) {
 
   const duplicatedTitle = `${source.title} (Copy)`;
   return await createResume(userId, {
+    ...source,
     title: duplicatedTitle,
-    template_id: source.template_id,
-    target_role: source.target_role,
-    sections: source.sections,
   });
 }
 
