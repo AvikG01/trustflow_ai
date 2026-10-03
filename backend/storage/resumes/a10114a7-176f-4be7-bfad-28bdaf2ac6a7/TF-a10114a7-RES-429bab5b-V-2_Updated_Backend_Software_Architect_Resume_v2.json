@@ -1,0 +1,164 @@
+{
+  "id": "429bab5b-bf26-4c50-af23-32bfea861b5b",
+  "userId": "a10114a7-176f-4be7-bfad-28bdaf2ac6a7",
+  "title": "Updated Backend Software Architect Resume",
+  "template": "modern_clean",
+  "template_id": "modern_clean",
+  "target_role": "Senior Node.js Developer",
+  "current_version": 2,
+  "currentVersion": 2,
+  "personalInfo": {
+    "fullName": "",
+    "email": "test_1790931336476@example.com",
+    "phone": "+1234567890",
+    "location": "",
+    "linkedin": "",
+    "github": "",
+    "portfolio": ""
+  },
+  "professionalSummary": "",
+  "careerObjective": "",
+  "skills": {
+    "frontend": [
+      "Node.js",
+      "Express",
+      "MySQL",
+      "Gemini AI"
+    ],
+    "backend": [],
+    "tools": []
+  },
+  "experience": [],
+  "education": [],
+  "internships": [
+    {
+      "id": "intern-0",
+      "role": "",
+      "company": "TechCorp",
+      "location": "",
+      "duration_months": 2,
+      "startDate": "",
+      "endDate": "",
+      "description": ""
+    }
+  ],
+  "projects": [],
+  "certifications": [
+    {
+      "id": "cert-0",
+      "name": "Oracle Java Certification",
+      "issuer": "Oracle Academy",
+      "issueDate": "",
+      "credentialId": ""
+    }
+  ],
+  "achievements": [],
+  "languages": [],
+  "createdAt": "2026-10-02T08:55:36.000Z",
+  "updatedAt": "2026-10-02T08:55:59.000Z",
+  "sections": [
+    {
+      "section_type": "personalInfo",
+      "content_json": {
+        "fullName": "",
+        "email": "test_1790931336476@example.com",
+        "phone": "+1234567890",
+        "location": "",
+        "linkedin": "",
+        "github": "",
+        "portfolio": ""
+      },
+      "sort_order": 0
+    },
+    {
+      "section_type": "summary",
+      "content_json": {
+        "professionalSummary": "",
+        "careerObjective": ""
+      },
+      "sort_order": 1
+    },
+    {
+      "section_type": "skills",
+      "content_json": {
+        "frontend": [
+          "Node.js",
+          "Express",
+          "MySQL",
+          "Gemini AI"
+        ],
+        "backend": [],
+        "tools": []
+      },
+      "sort_order": 2
+    },
+    {
+      "section_type": "experience",
+      "content_json": {
+        "experience": []
+      },
+      "sort_order": 3
+    },
+    {
+      "section_type": "education",
+      "content_json": {
+        "education": []
+      },
+      "sort_order": 4
+    },
+    {
+      "section_type": "internships",
+      "content_json": {
+        "internships": [
+          {
+            "id": "intern-0",
+            "role": "",
+            "company": "TechCorp",
+            "location": "",
+            "duration_months": 2,
+            "startDate": "",
+            "endDate": "",
+            "description": ""
+          }
+        ]
+      },
+      "sort_order": 5
+    },
+    {
+      "section_type": "projects",
+      "content_json": {
+        "projects": []
+      },
+      "sort_order": 6
+    },
+    {
+      "section_type": "certifications",
+      "content_json": {
+        "certifications": [
+          {
+            "id": "cert-0",
+            "name": "Oracle Java Certification",
+            "issuer": "Oracle Academy",
+            "issueDate": "",
+            "credentialId": ""
+          }
+        ]
+      },
+      "sort_order": 7
+    },
+    {
+      "section_type": "achievements",
+      "content_json": {
+        "achievements": []
+      },
+      "sort_order": 8
+    },
+    {
+      "section_type": "languages",
+      "content_json": {
+        "languages": []
+      },
+      "sort_order": 9
+    }
+  ]
+}

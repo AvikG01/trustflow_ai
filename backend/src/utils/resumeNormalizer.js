@@ -21,6 +21,7 @@ function normalizeResume(input) {
   const title = data.title || 'Untitled Resume';
   const template = data.template || data.template_id || 'TechnicalTemplate';
   const target_role = data.target_role || data.targetRole || '';
+  const current_version = parseInt(data.current_version || data.currentVersion || 1, 10);
   const createdAt = data.createdAt || data.created_at || new Date().toISOString();
   const updatedAt = data.updatedAt || data.updated_at || new Date().toISOString();
 
@@ -163,6 +164,8 @@ function normalizeResume(input) {
     template,
     template_id: template,
     target_role,
+    current_version,
+    currentVersion: current_version,
     personalInfo,
     professionalSummary,
     careerObjective,

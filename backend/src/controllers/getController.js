@@ -7,6 +7,8 @@ const jobModel = require('../models/jobModel');
 const driveModel = require('../models/driveModel');
 const auditModel = require('../models/auditModel');
 const { RESUME_TEMPLATES } = require('../config/constants');
+const googleDriveService = require('../services/googleDrive/googleDriveService');
+const pdfGeneratorService = require('../services/pdf/pdfGeneratorService');
 
 async function handleGet(req, res, next) {
   try {
@@ -46,6 +48,10 @@ async function handleGet(req, res, next) {
 
       case 'getDriveFiles':
         return await handleGetDriveFiles(req, res);
+
+      case 'downloadResumeFile':
+      case 'download_resume_file':
+        return await handleDownloadResumeFile(req, res);
 
       case 'getUsageLimits':
         return await handleGetUsageLimits(req, res);
@@ -186,6 +192,64 @@ async function handleGetAdminStats(req, res) {
     premium_users: users.filter((u) => u.account_type === 'PREMIUM').length,
     recent_activity: logs,
   });
+}
+
+async function handleDownloadResumeFile(req, res) {
+  if (!req.user) return responseHandler.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
+
+  const fileId = req.query.file_id || req.body?.file_id;
+  const resumeId = req.query.resume_id || req.body?.resume_id;
+
+  let fileRecord = null;
+  if (fileId) {
+    fileRecord = await driveModel.getDriveFileById(fileId, req.user.id);
+  } else if (resumeId) {
+    fileRecord = await driveModel.getDriveFileByResumeId(resumeId, req.user.id);
+  }
+
+  if (!fileRecord && resumeId) {
+    const resume = await resumeModel.getResumeById(resumeId, req.user.id);
+    if (resume) {
+      const pdfBuffer = await pdfGeneratorService.generateResumePDF(resume, resume.template_id || 'modern_clean');
+      const titleClean = (resume.title || resume.personalInfo?.fullName || 'Resume').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `${titleClean}.pdf`;
+      await googleDriveService.uploadResumeFile({
+        userId: req.user.id,
+        resumeId: resume.id,
+        version: resume.current_version || 1,
+        fileBuffer: pdfBuffer,
+        fileName,
+        mimeType: 'application/pdf',
+      });
+      fileRecord = await driveModel.getDriveFileByResumeId(resumeId, req.user.id);
+    }
+  }
+
+  if (!fileRecord || fileRecord.user_id !== req.user.id) {
+    return responseHandler.error(res, 'File not found or access denied', 403, 'FILE_NOT_OWNED');
+  }
+
+  let fileBuffer = await googleDriveService.getResumeFileBuffer({
+    userId: req.user.id,
+    driveFileId: fileRecord.drive_file_id,
+    fileName: fileRecord.file_name,
+  });
+
+  if (!fileBuffer && fileRecord.resume_id) {
+    const resume = await resumeModel.getResumeById(fileRecord.resume_id, req.user.id);
+    if (resume) {
+      fileBuffer = await pdfGeneratorService.generateResumePDF(resume, resume.template_id || 'modern_clean');
+    }
+  }
+
+  if (!fileBuffer || fileBuffer.length === 0) {
+    return responseHandler.error(res, 'PDF file content unavailable', 404, 'PDF_CONTENT_MISSING');
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileRecord.file_name || 'Resume.pdf'}"`);
+  res.setHeader('Content-Length', fileBuffer.length);
+  return res.send(fileBuffer);
 }
 
 module.exports = {

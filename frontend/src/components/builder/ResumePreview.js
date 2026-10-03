@@ -1,39 +1,32 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useResume } from '@/context/ResumeContext';
 import { useToast } from '@/context/ToastContext';
 import ResumePrintable from './ResumePrintable';
-import { FiZoomIn, FiZoomOut, FiPrinter, FiCheckCircle, FiRefreshCw } from 'react-icons/fi';
+import { FiZoomIn, FiZoomOut, FiPrinter, FiDownload, FiCheckCircle, FiRefreshCw } from 'react-icons/fi';
 
 export default function ResumePreview() {
-  const { resumeData, zoomLevel, setZoomLevel, isSaving, lastSavedTime, saveResumeNow } = useResume();
+  const { resumeData, zoomLevel, setZoomLevel, isSaving, lastSavedTime, saveResumeNow, downloadResumePDF } = useResume();
   const { addToast } = useToast();
   const previewRef = useRef(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const activeTemplate = resumeData?.template || 'TechnicalTemplate';
 
-  const handlePrint = async () => {
-    const p = resumeData?.personalInfo || {};
-    const hasName = Boolean(p.fullName || p.email || p.phone);
-    const hasSummary = Boolean(resumeData?.professionalSummary);
-    const hasSkills = Array.isArray(resumeData?.skills?.frontend) && resumeData.skills.frontend.length > 0;
-    const hasExperience = Array.isArray(resumeData?.experience) && resumeData.experience.length > 0;
-    const hasProjects = Array.isArray(resumeData?.projects) && resumeData.projects.length > 0;
-
-    if (!hasName && !hasSummary && !hasSkills && !hasExperience && !hasProjects) {
-      addToast('Please save your resume before downloading.', 'error');
-      return;
-    }
-
+  const handleDownload = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
     try {
-      if (!resumeData?.id) {
-        await saveResumeNow();
-      }
-    } catch (e) {
-      // Continue print even if background save had a warning
+      await downloadResumePDF(activeTemplate);
+    } catch (err) {
+      console.error('PDF download error:', err);
+    } finally {
+      setIsDownloading(false);
     }
+  };
 
+  const handlePrint = () => {
     window.print();
   };
 
@@ -82,13 +75,33 @@ export default function ResumePreview() {
             </button>
           </div>
 
-          {/* Print / Download Button */}
+          {/* Optional Print Preview */}
           <button
             onClick={handlePrint}
-            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white border border-cyan-500/30 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow"
+            className="flex items-center space-x-1 text-slate-400 hover:text-white bg-slate-800 border border-slate-700 px-2.5 py-1.5 rounded-lg text-xs transition-colors"
+            title="Open Browser Print Dialogue"
           >
             <FiPrinter className="w-3.5 h-3.5" />
-            <span>Download / Print PDF</span>
+            <span className="hidden sm:inline">Print</span>
+          </button>
+
+          {/* Primary Download PDF Button */}
+          <button
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="flex items-center space-x-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white border border-cyan-500/30 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isDownloading ? (
+              <>
+                <FiRefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Generating PDF...</span>
+              </>
+            ) : (
+              <>
+                <FiDownload className="w-3.5 h-3.5" />
+                <span>Download Resume PDF</span>
+              </>
+            )}
           </button>
         </div>
       </div>

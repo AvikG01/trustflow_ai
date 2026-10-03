@@ -4,6 +4,9 @@ const logger = require('../../utils/logger');
 const driveModel = require('../../models/driveModel');
 const Readable = require('stream').Readable;
 
+const fs = require('fs');
+const path = require('path');
+
 class GoogleDriveService {
   constructor() {
     this.clientId = env.GOOGLE.clientId;
@@ -25,16 +28,27 @@ class GoogleDriveService {
   }
 
   /**
-   * Upload Resume Document to Google Drive Resume Folder
+   * Upload Resume Document to Google Drive / Persistent Storage
    */
-  async uploadResumeFile({ userId, resumeId, version = 1, fileBuffer, fileName, mimeType = 'application/json' }) {
+  async uploadResumeFile({ userId, resumeId, version = 1, fileBuffer, fileName, mimeType = 'application/pdf' }) {
     const shortUser = userId.substring(0, 8);
-    const shortRes = resumeId.substring(0, 8);
+    const shortRes = resumeId ? resumeId.substring(0, 8) : 'RES';
     const refCode = `TF-${shortUser}-RES-${shortRes}-V-${version}`;
-    const formattedFileName = `${refCode}_${fileName}`;
+    const formattedFileName = fileName ? `${refCode}_${fileName}` : `${refCode}_Resume.pdf`;
     const folderId = env.GOOGLE.resumeFolderId;
 
     let driveFileId = `MOCK-DRIVE-RESUME-${Date.now()}`;
+
+    // Always persist copy to local storage directory as guaranteed fallback
+    try {
+      const storageDir = path.join(__dirname, '../../../storage/resumes', userId);
+      await fs.promises.mkdir(storageDir, { recursive: true });
+      const filePath = path.join(storageDir, formattedFileName);
+      await fs.promises.writeFile(filePath, fileBuffer);
+      logger.info(`Successfully stored local copy of resume PDF at: ${filePath}`);
+    } catch (fsErr) {
+      logger.warn(`Failed to store local PDF file: ${fsErr.message}`);
+    }
 
     if (this.drive && folderId) {
       try {
@@ -80,6 +94,32 @@ class GoogleDriveService {
       referenceCode: refCode,
       fileName: formattedFileName,
     };
+  }
+
+  /**
+   * Retrieve PDF File Buffer from Local Disk or Google Drive
+   */
+  async getResumeFileBuffer({ userId, driveFileId, fileName }) {
+    if (userId && fileName) {
+      const localPath = path.join(__dirname, '../../../storage/resumes', userId, fileName);
+      if (fs.existsSync(localPath)) {
+        return await fs.promises.readFile(localPath);
+      }
+    }
+
+    if (this.drive && driveFileId && !driveFileId.startsWith('MOCK-')) {
+      try {
+        const response = await this.drive.files.get(
+          { fileId: driveFileId, alt: 'media' },
+          { responseType: 'arraybuffer' }
+        );
+        return Buffer.from(response.data);
+      } catch (err) {
+        logger.warn(`Failed to fetch file from Google Drive API: ${err.message}`);
+      }
+    }
+
+    return null;
   }
 
   /**

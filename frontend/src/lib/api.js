@@ -129,6 +129,8 @@ export async function apiRequest({ action, method = 'POST', data = {}, params = 
     search_jobs: 'searchJobs',
     optimize_resume_for_job: 'optimizeResumeForJob',
     generate_ai_email: 'generateHREmail',
+    generate_resume_pdf: 'generateResumePDF',
+    download_resume_file: 'downloadResumeFile',
   };
 
   const backendAction = actionMap[action] || action;
@@ -191,4 +193,60 @@ export async function apiRequest({ action, method = 'POST', data = {}, params = 
     }
     throw error;
   }
+}
+
+/**
+ * Direct Blob download helper for persistent PDF resume files
+ */
+export async function downloadResumeFileBlob({ file_id, resume_id, customFilename = 'Resume.pdf' }) {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Authentication required');
+  }
+
+  const url = new URL(`${API_BASE_URL}/get`);
+  url.searchParams.append('action', 'downloadResumeFile');
+  if (file_id) url.searchParams.append('file_id', file_id);
+  if (resume_id) url.searchParams.append('resume_id', resume_id);
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'x-action': 'downloadResumeFile',
+    },
+  });
+
+  if (!response.ok) {
+    const jsonErr = await response.json().catch(() => ({}));
+    throw new Error(jsonErr.message || `Failed to download file (HTTP ${response.status})`);
+  }
+
+  const blob = await response.blob();
+  if (!blob || blob.size === 0) {
+    throw new Error('Downloaded resume PDF file is empty');
+  }
+
+  const blobUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = blobUrl;
+
+  const contentDisp = response.headers.get('Content-Disposition');
+  let fileName = customFilename;
+  if (contentDisp && contentDisp.includes('filename=')) {
+    const match = contentDisp.match(/filename=["']?([^"';]+)["']?/);
+    if (match && match[1]) fileName = match[1];
+  }
+
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+
+  setTimeout(() => {
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  }, 100);
+
+  return { success: true, fileName };
 }

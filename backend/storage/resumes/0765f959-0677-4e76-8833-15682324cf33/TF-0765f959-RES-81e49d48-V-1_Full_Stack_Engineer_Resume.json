@@ -1,0 +1,114 @@
+{
+  "id": "81e49d48-c1ec-4170-bc71-201a36c76f76",
+  "userId": "0765f959-0677-4e76-8833-15682324cf33",
+  "title": "Full Stack Engineer Resume",
+  "template": "executive_bold",
+  "template_id": "executive_bold",
+  "target_role": "Full Stack Lead",
+  "personalInfo": {
+    "fullName": "",
+    "email": "",
+    "phone": "",
+    "location": "",
+    "linkedin": "",
+    "github": "",
+    "portfolio": ""
+  },
+  "professionalSummary": "",
+  "careerObjective": "",
+  "skills": {
+    "frontend": [],
+    "backend": [],
+    "tools": []
+  },
+  "experience": [],
+  "education": [],
+  "internships": [],
+  "projects": [],
+  "certifications": [],
+  "achievements": [],
+  "languages": [],
+  "createdAt": "2026-10-01T07:11:38.000Z",
+  "updatedAt": "2026-10-01T07:11:38.000Z",
+  "sections": [
+    {
+      "section_type": "personalInfo",
+      "content_json": {
+        "fullName": "",
+        "email": "",
+        "phone": "",
+        "location": "",
+        "linkedin": "",
+        "github": "",
+        "portfolio": ""
+      },
+      "sort_order": 0
+    },
+    {
+      "section_type": "summary",
+      "content_json": {
+        "professionalSummary": "",
+        "careerObjective": ""
+      },
+      "sort_order": 1
+    },
+    {
+      "section_type": "skills",
+      "content_json": {
+        "frontend": [],
+        "backend": [],
+        "tools": []
+      },
+      "sort_order": 2
+    },
+    {
+      "section_type": "experience",
+      "content_json": {
+        "experience": []
+      },
+      "sort_order": 3
+    },
+    {
+      "section_type": "education",
+      "content_json": {
+        "education": []
+      },
+      "sort_order": 4
+    },
+    {
+      "section_type": "internships",
+      "content_json": {
+        "internships": []
+      },
+      "sort_order": 5
+    },
+    {
+      "section_type": "projects",
+      "content_json": {
+        "projects": []
+      },
+      "sort_order": 6
+    },
+    {
+      "section_type": "certifications",
+      "content_json": {
+        "certifications": []
+      },
+      "sort_order": 7
+    },
+    {
+      "section_type": "achievements",
+      "content_json": {
+        "achievements": []
+      },
+      "sort_order": 8
+    },
+    {
+      "section_type": "languages",
+      "content_json": {
+        "languages": []
+      },
+      "sort_order": 9
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
@@ -11,6 +11,8 @@ import UsageLimitCard from '@/components/dashboard/UsageLimitCard';
 import ProgressRing from '@/components/dashboard/ProgressRing';
 import InfographicCard from '@/components/dashboard/InfographicCard';
 import LoadingState from '@/components/ui/LoadingState';
+import { apiRequest, downloadResumeFileBlob } from '@/lib/api';
+import { useToast } from '@/context/ToastContext';
 import {
   FiFileText,
   FiPieChart,
@@ -24,6 +26,9 @@ import {
   FiCheckCircle,
   FiPlusCircle,
   FiUpload,
+  FiDownload,
+  FiRefreshCw,
+  FiClock,
 } from 'react-icons/fi';
 
 export default function UserDashboard() {
@@ -31,12 +36,54 @@ export default function UserDashboard() {
   const { user, limits, loading: authLoading } = useAuth();
   const { resumeData, resumes, analysis } = useResume();
   const { isAtsAuthorized, openAuthModal } = useAtsAuth();
+  const { addToast } = useToast();
+
+  const [savedFiles, setSavedFiles] = useState([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [downloadingFileId, setDownloadingFileId] = useState(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.replace('/login');
     }
   }, [authLoading, user, router]);
+
+  useEffect(() => {
+    if (user) {
+      fetchSavedFiles();
+    }
+  }, [user]);
+
+  const fetchSavedFiles = async () => {
+    setLoadingFiles(true);
+    try {
+      const res = await apiRequest({ action: 'get_drive_files' });
+      const filesList = Array.isArray(res?.files) ? res.files : [];
+      setSavedFiles(filesList.filter((f) => f.file_type === 'RESUME'));
+    } catch (err) {
+      console.error('Failed to load saved files:', err);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  const handleDownloadSavedFile = async (file) => {
+    if (downloadingFileId) return;
+    setDownloadingFileId(file.id);
+    try {
+      addToast('Downloading saved PDF resume file...', 'info');
+      await downloadResumeFileBlob({
+        file_id: file.id,
+        resume_id: file.resume_id,
+        customFilename: file.file_name || 'Resume.pdf',
+      });
+      addToast('Resume PDF downloaded successfully!', 'success');
+    } catch (err) {
+      addToast(err.message || 'Failed to download stored resume file', 'error');
+    } finally {
+      setDownloadingFileId(null);
+    }
+  };
 
   if (authLoading || !user) {
     return <LoadingState message="Loading your account dashboard..." />;
@@ -196,8 +243,89 @@ export default function UserDashboard() {
         </div>
       </div>
 
-      {/* Infographic Section */}
-      <InfographicCard />
+      {/* Saved Resumes & Persistent PDF Files Section */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h3 className="text-base font-bold text-white flex items-center space-x-2">
+              <FiFileText className="w-5 h-5 text-cyan-400" />
+              <span>Saved Resumes & PDF Downloads</span>
+            </h3>
+            <p className="text-xs text-slate-400">
+              Persistent A4 PDF files stored in your account database. Re-download your resume files anytime.
+            </p>
+          </div>
+          <button
+            onClick={fetchSavedFiles}
+            disabled={loadingFiles}
+            className="p-2 text-slate-400 hover:text-white bg-slate-950 border border-slate-800 rounded-lg transition-colors"
+            title="Refresh Files List"
+          >
+            <FiRefreshCw className={`w-4 h-4 ${loadingFiles ? 'animate-spin text-cyan-400' : ''}`} />
+          </button>
+        </div>
+
+        {loadingFiles ? (
+          <div className="py-6 text-center text-xs text-slate-400 animate-pulse">
+            Loading saved resume files...
+          </div>
+        ) : savedFiles.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {savedFiles.map((file) => (
+              <div
+                key={file.id}
+                className="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl p-4 space-y-3 flex flex-col justify-between transition-all"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
+                      PDF Version {file.version || 1}
+                    </span>
+                    <span className="text-[10px] text-slate-400 flex items-center space-x-1 font-mono">
+                      <FiClock className="w-3 h-3 text-slate-500" />
+                      <span>{new Date(file.created_at).toLocaleDateString()}</span>
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-white tracking-tight truncate pt-1" title={file.file_name}>
+                    {file.file_name || 'Resume.pdf'}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 font-mono truncate">
+                    Ref: {file.reference_code || file.id.substring(0, 8)}
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400">PDF Document</span>
+                  <button
+                    onClick={() => handleDownloadSavedFile(file)}
+                    disabled={downloadingFileId === file.id}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-lg shadow transition-all disabled:opacity-50"
+                  >
+                    {downloadingFileId === file.id ? (
+                      <>
+                        <FiRefreshCw className="w-3 h-3 animate-spin" />
+                        <span>Fetching...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FiDownload className="w-3 h-3" />
+                        <span>Download PDF</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-6 bg-slate-950 rounded-xl border border-slate-800 text-center space-y-2">
+            <p className="text-xs text-slate-400">No saved PDF documents found in your account storage.</p>
+            <p className="text-[11px] text-slate-400">
+              Create a resume in the builder and click "Download Resume PDF" to generate and persist your first A4 file.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Recent Resumes & Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

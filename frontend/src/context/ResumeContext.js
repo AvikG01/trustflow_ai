@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { apiRequest } from '@/lib/api';
+import { apiRequest, downloadResumeFileBlob } from '@/lib/api';
 import { useToast } from './ToastContext';
 
 const ResumeContext = createContext(null);
@@ -338,6 +338,37 @@ export function ResumeProvider({ children }) {
     setIsSaving(false);
   }, []);
 
+  const downloadResumePDF = useCallback(async (templateId) => {
+    try {
+      addToast('Saving latest resume state...', 'info');
+      const saved = await saveResumeNow();
+      const resumeId = saved?.id || resumeData?.id;
+
+      addToast('Generating A4 PDF file...', 'info');
+      const genResult = await apiRequest({
+        action: 'generate_resume_pdf',
+        data: {
+          resume_id: resumeId,
+          resume_data: saved || resumeData,
+          template_id: templateId || resumeData?.template || 'modern_clean',
+        },
+      });
+
+      addToast('Downloading PDF file...', 'info');
+      await downloadResumeFileBlob({
+        file_id: genResult?.file_id,
+        resume_id: resumeId,
+        customFilename: genResult?.file_name || 'Resume.pdf',
+      });
+
+      addToast('Resume PDF downloaded successfully!', 'success');
+      return genResult;
+    } catch (err) {
+      addToast(err.message || 'Failed to download resume PDF', 'error');
+      throw err;
+    }
+  }, [addToast, saveResumeNow, resumeData]);
+
   return (
     <ResumeContext.Provider
       value={{
@@ -365,6 +396,7 @@ export function ResumeProvider({ children }) {
         resetResumeState,
         saveResumeNow,
         loadUserResumes,
+        downloadResumePDF,
       }}
     >
       {children}

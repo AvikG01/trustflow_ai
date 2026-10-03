@@ -27,7 +27,14 @@ async function createAnalysis({ userId, resumeId, targetJobTitle, targetJobDescr
           param.category || 'ATS',
           param.parameter_name || 'General',
           param.score || 0,
-          param.severity || 'NONE',
+          (() => {
+            const valid = ['CRITICAL', 'MAJOR', 'MINOR', 'NONE'];
+            let s = String(param.severity || 'NONE').toUpperCase();
+            if (s === 'HIGH') s = 'CRITICAL';
+            if (s === 'MODERATE' || s === 'MEDIUM') s = 'MAJOR';
+            if (s === 'LOW') s = 'MINOR';
+            return valid.includes(s) ? s : 'NONE';
+          })(),
           param.current_value || '',
           param.problem || '',
           param.why_it_matters || '',

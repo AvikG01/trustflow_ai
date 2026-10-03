@@ -14,6 +14,7 @@ const resumeAIService = require('../services/ai/resumeAIService');
 const jobAIService = require('../services/ai/jobAIService');
 const googleDriveService = require('../services/googleDrive/googleDriveService');
 const resumeParser = require('../services/resume/resumeParser');
+const pdfGeneratorService = require('../services/pdf/pdfGeneratorService');
 const { normalizeResume, isResumeEmpty } = require('../utils/resumeNormalizer');
 
 async function handlePost(req, res, next) {
@@ -60,6 +61,14 @@ async function handlePost(req, res, next) {
 
       case 'syncGoogleDrive':
         return await handleSyncGoogleDrive(req, res);
+
+      case 'generateResumePDF':
+      case 'generate_resume_pdf':
+        return await handleGenerateResumePDF(req, res);
+
+      case 'downloadResumeFile':
+      case 'download_resume_file':
+        return await handleDownloadResumeFile(req, res);
 
       default:
         return responseHandler.error(res, `Unknown POST action: ${action}`, 400, 'INVALID_ACTION');
@@ -560,6 +569,118 @@ async function handleSyncGoogleDrive(req, res) {
   });
 
   return responseHandler.success(res, 'Google Drive sync completed', { google_drive: driveResult });
+}
+
+// 12. Generate Resume PDF & Store
+async function handleGenerateResumePDF(req, res) {
+  if (!req.user) return responseHandler.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
+
+  const { resume_id, resume_data, template_id, template } = req.body;
+  const activeTemplate = template_id || template || 'modern_clean';
+
+  let resumeToProcess = null;
+
+  if (resume_id) {
+    if (resume_data) {
+      await resumeModel.updateResume(resume_id, req.user.id, resume_data);
+    }
+    resumeToProcess = await resumeModel.getResumeById(resume_id, req.user.id);
+  } else if (resume_data) {
+    resumeToProcess = normalizeResume(resume_data);
+  }
+
+  if (!resumeToProcess) {
+    return responseHandler.error(res, 'Resume content or valid resume_id is required', 400, 'RESUME_ID_MISSING');
+  }
+
+  try {
+    const pdfBuffer = await pdfGeneratorService.generateResumePDF(resumeToProcess, activeTemplate);
+    const titleClean = (resumeToProcess.title || resumeToProcess.personalInfo?.fullName || 'Resume').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${titleClean}_${activeTemplate}.pdf`;
+
+    const driveResult = await googleDriveService.uploadResumeFile({
+      userId: req.user.id,
+      resumeId: resumeToProcess.id || resume_id,
+      version: resumeToProcess.current_version || 1,
+      fileBuffer: pdfBuffer,
+      fileName,
+      mimeType: 'application/pdf',
+    });
+
+    const fileRecord = await driveModel.getDriveFileByResumeId(resumeToProcess.id || resume_id, req.user.id);
+
+    return responseHandler.success(res, 'Resume PDF generated and stored successfully', {
+      file_id: fileRecord?.id,
+      drive_file_id: driveResult.driveFileId,
+      file_name: driveResult.fileName,
+      reference_code: driveResult.referenceCode,
+      resume_id: resumeToProcess.id,
+      version: resumeToProcess.current_version || 1,
+      template: activeTemplate,
+      size_bytes: pdfBuffer.length,
+    });
+  } catch (err) {
+    return responseHandler.error(res, `Unable to generate resume PDF: ${err.message}`, 500, 'RESUME_PDF_GENERATION_FAILED');
+  }
+}
+
+// 13. Download Stored Resume PDF
+async function handleDownloadResumeFile(req, res) {
+  if (!req.user) return responseHandler.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
+
+  const fileId = req.query.file_id || req.body?.file_id;
+  const resumeId = req.query.resume_id || req.body?.resume_id;
+
+  let fileRecord = null;
+  if (fileId) {
+    fileRecord = await driveModel.getDriveFileById(fileId, req.user.id);
+  } else if (resumeId) {
+    fileRecord = await driveModel.getDriveFileByResumeId(resumeId, req.user.id);
+  }
+
+  if (!fileRecord && resumeId) {
+    const resume = await resumeModel.getResumeById(resumeId, req.user.id);
+    if (resume) {
+      const pdfBuffer = await pdfGeneratorService.generateResumePDF(resume, resume.template_id || 'modern_clean');
+      const titleClean = (resume.title || resume.personalInfo?.fullName || 'Resume').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const fileName = `${titleClean}.pdf`;
+      await googleDriveService.uploadResumeFile({
+        userId: req.user.id,
+        resumeId: resume.id,
+        version: resume.current_version || 1,
+        fileBuffer: pdfBuffer,
+        fileName,
+        mimeType: 'application/pdf',
+      });
+      fileRecord = await driveModel.getDriveFileByResumeId(resumeId, req.user.id);
+    }
+  }
+
+  if (!fileRecord || fileRecord.user_id !== req.user.id) {
+    return responseHandler.error(res, 'File not found or access denied', 403, 'FILE_NOT_OWNED');
+  }
+
+  let fileBuffer = await googleDriveService.getResumeFileBuffer({
+    userId: req.user.id,
+    driveFileId: fileRecord.drive_file_id,
+    fileName: fileRecord.file_name,
+  });
+
+  if (!fileBuffer && fileRecord.resume_id) {
+    const resume = await resumeModel.getResumeById(fileRecord.resume_id, req.user.id);
+    if (resume) {
+      fileBuffer = await pdfGeneratorService.generateResumePDF(resume, resume.template_id || 'modern_clean');
+    }
+  }
+
+  if (!fileBuffer || fileBuffer.length === 0) {
+    return responseHandler.error(res, 'PDF file content unavailable', 404, 'PDF_CONTENT_MISSING');
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileRecord.file_name || 'Resume.pdf'}"`);
+  res.setHeader('Content-Length', fileBuffer.length);
+  return res.send(fileBuffer);
 }
 
 module.exports = {
